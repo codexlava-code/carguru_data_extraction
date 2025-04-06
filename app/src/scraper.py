@@ -1,239 +1,222 @@
-import time, os, urllib.parse, logging, json
+import time, os, urllib.parse, logging, json, random
 from datetime import datetime
-from random import randint
 from math import ceil
 from bs4 import BeautifulSoup
-from typing import List
+from typing import List, Optional
+from urllib.parse import urljoin
 
+from pydantic import HttpUrl
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
 from app.config.config import settings
-from app.models.models import Vehicle
-from app.api.vehicle_data import VehicleData
+from app.config.web_driver import webdriver_pool
+from app.api.vehicle_data import VehicleDataAPI
+from app.models.schemas import (
+    DealershipDetails, Dealership,
+    VehicleDetails, VehicleData, Model, Make, DealershipData
+)
+
 
 class VehicleScraper:
-    def __init__(self, slack_obj=None):
-        """Initialize Slack client with bot token and signing secret."""
-        self.slack_notifier = slack_obj
+    def __init__(self, slack_notifier=None):
+        self.slack_notifier = slack_notifier
 
 
-    def extract_dealership_data(self, soup_data, url, dealership_name):
+    def extract_dealership_data(self, soup_data: BeautifulSoup, url: HttpUrl, dealership_name: str) -> Optional[DealershipDetails]:
         try:
-            title = soup_data.find("div", class_="dealerDetailsHeader").find("h1", class_="dealerName").get_text(
-                strip=True) if \
-                (soup_data.find("div", class_="dealerDetailsHeader").find("h1", class_="dealerName")) else None
-            address = ' '.join(
-                soup_data.find('div', class_='dealerDetailsInfo').find_all(string=True, recursive=False)).strip() if \
-                (soup_data.find('div', class_='dealerDetailsInfo').find_all(string=True, recursive=False)) else None
-            link = soup_data.find("p", class_="dealerWebLinks").find("a").get_text(strip=True) if \
-                (soup_data.find("p", class_="dealerWebLinks").find("a")) else None
-            phone = soup_data.find("span", class_="dealerSalesPhone").get_text(strip=True) if \
-                (soup_data.find("span", class_="dealerSalesPhone")) else None
-            hours_operation = soup_data.find("div", class_="dealerText").get_text(strip=True) if \
-                (soup_data.find("div", class_="dealerText")) else None
-            logo = soup_data.find("div", class_="dealerLogo").find("img").get("src") if \
-                (soup_data.find("div", class_="dealerLogo").find("img")) else None
-
-            data = {
-                "title": title,
-                "link": link,
-                "address": address,
-                "phone": phone,
-                "hours_operation": hours_operation,
-                "logo": logo,
-            }
-            # self.slack_notifier.slack_obj.send_message(
-            #     message=f"Success✅: Extracted Dealership Details: NAME: {dealership_name}, URL: {url}, TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            #     channel_id=settings.SLACK_CHANNEL
-            # )
+            data = DealershipDetails(
+                title=(soup_data.select_one("div.dealerDetailsHeader h1.dealerName").get_text(strip=True)
+                       if soup_data.select_one("div.dealerDetailsHeader h1.dealerName") else None),
+                link = (soup_data.select_one("p.dealerWebLinks a").get_text(strip=True)
+                        if soup_data.select_one("p.dealerWebLinks a") else None),
+                address = (' '.join(soup_data.select_one('div.dealerDetailsInfo').find_all(string=True, recursive=False)).strip()
+                        if soup_data.select_one('div.dealerDetailsInfo') else None),
+                phone = (soup_data.select_one("span.dealerSalesPhone").get_text(strip=True)
+                         if soup_data.select_one("span.dealerSalesPhone") else None),
+                hours_operation = (soup_data.select_one("div.dealerText").get_text(strip=True)
+                                   if soup_data.select_one("div.dealerText") else None),
+                logo = (soup_data.select_one("div.dealerLogo img").get("src")
+                        if soup_data.select_one("div.dealerLogo img") else None)
+            )
             logging.info(f"Successfully extracted dealership data for {dealership_name} from URL {url}")
 
             return data
         except Exception as e:
             error_message = (
-                f"Error❌: Extracting Dealership Details: NAME: {dealership_name}, URL: {url}, "
-                f"TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, ERROR: {str(e)}"
-            )
-            self.slack_notifier.slack_obj.send_message(
-                message=error_message,
-                channel_id=settings.SLACK_CHANNEL
+                f"Error❌: Extracting Dealership Details {dealership_name}, URL: {url},ERROR: {str(e)}"
             )
             logging.error(error_message)
+            if self.slack_notifier:
+                self.slack_notifier.send_message(
+                    message=error_message,
+                    channel_id=settings.SLACK_CHANNEL
+                )
             return None
 
 
-    def extract_vehicle_links(self, soup_data: BeautifulSoup, base_url: str) -> List[str]:
-        vehicle_links = []
-        for a_tag in soup_data.find_all('a', {'data-testid': 'car-blade-link'}):
-            if a_tag and a_tag.get('href'):
-                href = a_tag.get('href')
-                full_url = urllib.parse.urljoin(base_url, href)
-                vehicle_links.append(full_url)
+    def extract_vehicle_links_on_page(self, soup_data: BeautifulSoup, base_url: HttpUrl) -> List[str]:
+        vehicle_links = [urljoin(str(base_url), tag['href'])
+                         for tag in soup_data.find_all('a',
+                                                       {'data-testid': 'car-blade-link'},
+                                                       href=True) if tag]
+        logging.debug(f"Extracted {len(vehicle_links)} vehicle links.")
         return vehicle_links
 
 
-    def get_total_pages(self, soup_data):
-        try:
-            span_text = soup_data.find("span", string=lambda text: text and "Page" in text)
-            if span_text:
-                parts = span_text.text.split()
-                if len(parts) >= 4 and parts[-1].isdigit():
-                    return int(parts[-1])
-        except Exception as e:
-            logging.error(f"Error extracting total pages: {e}")
+    @staticmethod
+    def get_total_pages(soup_data: BeautifulSoup) -> int:
+        span_text = soup_data.find("span", string=lambda text: text and "Page" in text)
+        if span_text:
+            parts = span_text.text.split()
+            if len(parts) >= 4 and parts[-1].isdigit():
+                return int(parts[-1])
         return 1
 
 
-    def get_all_vehicle_links(self, soup_data, dealership):
-        try:
-            max_pages = self.get_total_pages(soup_data)
-            logging.info(f"Detected {max_pages} total pages at {dealership.url}")
+    def get_all_vehicle_links(self, soup_data: BeautifulSoup, dealership: DealershipData) -> List[str]:
+        all_vehicle_links = []
+        base_url = dealership.url
+        total_pages = self.get_total_pages(soup_data)
 
-            all_vehicle_links = []
-            for page_num in range(1, max_pages + 1):
-                page_url = f"{dealership.url}#resultsPage={page_num}"
-                print(f"Getting vehicle links from page {page_url} of {max_pages}...")
+        logging.info(f"Detected {total_pages} total pages for dealership:"
+                     f" {dealership.dealership_name}")
 
-                try:
-                    with settings.init_driver() as driver:
-                        driver.get(page_url)
-                        WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.TAG_NAME, "body"))
-                        )  # Wait until the body tag is loaded
+        for page_num in range(1, total_pages + 1):
+            page_url = f"{dealership.url}#resultsPage={page_num}"
+            logging.info(f"Processing page {page_num} of {total_pages}: {page_url}")
 
-                        soup = BeautifulSoup(driver.page_source, "lxml")
+            try:
+                with webdriver_pool.get_driver() as driver:
+                    # Random delay to mitigate detection or rate-limiting
+                    sleep_duration = random.uniform(1, 2)
+                    time.sleep(sleep_duration)
 
-                        vehicle_links = self.extract_vehicle_links(soup, dealership.url)
+                    driver.get(str(page_url))
 
-                        if not vehicle_links:
-                            message = "No vehicle links found on this page. Stopping..."
-                            logging.warning(message)
+                    soup_data = BeautifulSoup(driver.page_source, "lxml")
+                    vehicle_links_on_page = self.extract_vehicle_links_on_page(soup_data, dealership.url)
+
+                    if not vehicle_links_on_page:
+                        message = f"No vehicle links found on page {page_num}, stopping further processing."
+                        logging.warning(message)
+                        if self.slack_notifier:
                             self.slack_notifier.send_message(
                                 message=message,
                                 channel_id=settings.SLACK_CHANNEL
                             )
-                            break
+                        break
 
-                        all_vehicle_links.extend(vehicle_links)
-                        logging.info(f"Found {len(vehicle_links)} links on Page {page_num}")
+                    all_vehicle_links.extend(vehicle_links_on_page)
+                    logging.info(f"Found {len(vehicle_links_on_page)} links on Page {page_num}")
 
-                except Exception as e:
-                    err_message = (
-                        f"Error❌ extracting Vehicle Navigation URL, NAME: {dealership.dealership_name}, "
-                        f"URL: {page_url}, TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, ERROR: {str(e)}"
-                    )
+            except Exception as exc:
+                error_message = (
+                    f"Error extracting vehicle links for dealership '{dealership.dealership_name}', "
+                    f"URL: {page_url}, Error: {str(exc)}"
+                )
+                logging.error(error_message)
+                if self.slack_notifier:
                     self.slack_notifier.send_message(
-                        message=err_message,
+                        message=error_message,
                         channel_id=settings.SLACK_CHANNEL
                     )
-                    logging.error(err_message)
 
-            return all_vehicle_links
-
-        except Exception as e:
-            err_message = (
-                f"Error❌ extracting dealership navigation, NAME: {dealership.dealership_name}, "
-                f"URL: {dealership.url}, TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, ERROR: {str(e)}"
-            )
-            self.slack_notifier.send_message(
-                message=err_message,
-                channel_id=settings.SLACK_CHANNEL
-            )
-            logging.error(err_message)
+        return all_vehicle_links
 
 
-    def extract_vehicle_data(self, soup_data, vehicle_url, dealership):
-        """ Extract vehicle data from details page"""
-        # title = soup_data.find("div", class_="_titleInfo_uw1k0_49").find("h4").get_text(strip=True) if \
-        #     (soup_data.find("div", class_="_titleInfo_uw1k0_49").find("h4")) else None
+    def extract_vehicle_data(self, soup_data: BeautifulSoup, vehicle_url: HttpUrl, dealership: DealershipData) -> Optional[VehicleDetails]:
         try:
             # Features data
-            features_data = soup_data.find_all("li", class_="_listItem_1tanl_14") or []
-            # Dictionary to store extracted data
             feature_details = {}
+            features_data = soup_data.find_all("li", class_="_listItem_1tanl_14") or []
             for data in features_data:
-                key = None
-                value = None
-                if data.find("h5"):  # Ensure the <h5> tag exists
-                    key = data.find("h5").get_text(strip=True).replace(" ", "_").lower()
-                if data.find("p"):  # Ensure the <p> tag exists
-                    value = data.find("p").get_text(strip=True)
-                if key and value:
-                    feature_details[key] = value
+                key_tag = data.find("h5")
+                value_tag = data.find("p")
 
-            # # # extract dl data to dt
-            records_container = soup_data.find("div", class_="_records_1vyus_9", attrs={"data-cg-ft": "listing-vdp-stats"})
+                key = key_tag.get_text(strip=True).replace(" ", "_").lower() if key_tag else None
+                value = value_tag.get_text(strip=True) if value_tag else None
+                if key:
+                        feature_details[key] = value
+
+            # Overview data
+            overview_details = {}
+            records_container = soup_data.find(
+                "div", class_="_records_1vyus_9", attrs={"data-cg-ft": "listing-vdp-stats"}
+            )
             dt_tags = records_container.find("ul").find_all("li") if (
                     records_container and records_container.find("ul")) else []
 
-            overview_details = {}
             for dt_tag in dt_tags:
-                key = None
-                value = None
-                if dt_tag.find("span", class_="_label_zbkq7_7"):  # Check if the key exists
-                    key = (
-                        dt_tag.find("span", class_="_label_zbkq7_7")
-                        .get_text(strip=True)
-                        .replace(":", "")
-                        .replace(" ", "_")
-                        .lower()
-                    )
-                if dt_tag.find("span", class_="_value_zbkq7_14"):  # Check if the value exists
-                    value = dt_tag.find("span", class_="_value_zbkq7_14").get_text(strip=True)
-                if key and value:
-                    overview_details[key] = value
+                key_tag = dt_tag.find("span", class_="_label_zbkq7_7")
+                value_tag = dt_tag.find("span", class_="_value_zbkq7_14")
+
+                key = (
+                    key_tag.get_text(strip=True)
+                    .replace(":", "")
+                    .replace(" ", "_")
+                    .lower()
+                    if key_tag else None
+                )
+                value = value_tag.get_text(strip=True) if value_tag else None
+                if key:
+                        overview_details[key] = value
 
             # Parse and build the data dictionary
-
-            data = {
-                    "dealership_id": dealership.dealership_id,
-                    "vin": overview_details.get("vin"),
-                    "mileage": int(feature_details.get("mileage").replace(",", "")) if feature_details.get(
-                        "mileage") else None,
-                    "stock_number": overview_details.get("stock_number"),
-                    "description": "",
-                    "exterior_color": overview_details.get("exterior_color"),
-                    "interior_color": overview_details.get("interior_color"),
-                    "model": {
-                        "name": overview_details.get("model"),
-                        "year": overview_details.get("year"),
-                        "trim": overview_details.get("trim"),
-                        "body_style": overview_details.get("body_type"),
-                        "transmission": feature_details.get("transmission"),
-                        "fuel_type": feature_details.get("fuel_type"),
-                        "drivetrain": feature_details.get("drivetrain"),
-                        "engine": feature_details.get("engine"),
-                        "make": {
-                            "name": overview_details.get("make"),
-                        },
-                    },
-            }
-            return data
-        except Exception as e:
-            error_message = f"Data construction error 💥 URL: {vehicle_url}, ERROR: {str(e)}"
-            self.slack_notifier.send_message(
-                message=error_message,
-                channel_id=settings.SLACK_CHANNEL
+            vehicle_data = VehicleDetails(
+                    dealership_id=dealership.dealership_id,
+                    vin=overview_details.get("vin"),
+                    mileage=int(feature_details['mileage'].replace(",", "")) if
+                        "mileage" in feature_details else None,
+                    stock_number=overview_details.get("stock_number"),
+                    description="",
+                    exterior_color=overview_details.get("exterior_color"),
+                    interior_color=overview_details.get("interior_color"),
+                    model=Model(
+                        name=overview_details.get("model"),
+                        year=overview_details.get("year"),
+                        trim=overview_details.get("trim"),
+                        body_style=overview_details.get("body_type"),
+                        transmission=feature_details.get("transmission"),
+                        fuel_type=feature_details.get("fuel_type"),
+                        drivetrain=feature_details.get("drivetrain"),
+                        engine=feature_details.get("engine"),
+                        make=Make(
+                            name=overview_details.get("make")
+                        )
+                    )
             )
+            return vehicle_data
+        except Exception as e:
+            error_message = f"Vehicle Data construction error 💥 URL: {vehicle_url}, ERROR: {str(e)}"
             logging.error(error_message)
+            if self.slack_notifier:
+                self.slack_notifier.send_message(
+                    message=error_message,
+                    channel_id=settings.SLACK_CHANNEL
+                )
             return None
 
-    def process_vehicle_data(self, vehicle_url, dealership):
-            try:
-                with settings.init_driver() as driver:
-                    # Introduce a random delay before loading the page
-                    time.sleep(randint(*(2, 5)))
+    def process_vehicle_data(self, vehicle_url: HttpUrl, dealership: DealershipData) -> Optional[VehicleData]:
+            with webdriver_pool.get_driver() as driver:
+                try:
+                    # Random delay to mitigate detection or rate-limiting
+                    sleep_duration = random.uniform(1, 2)
+                    logging.info(f"Sleeping {sleep_duration} seconds before accessing {vehicle_url}")
+                    time.sleep(sleep_duration)
 
-                    driver.get(vehicle_url)
-                    WebDriverWait(driver, 20).until(
+                    # get driver data
+                    driver.get(str(vehicle_url))
+                    webdriver_pool.scroll_incrementally(driver)
+                    WebDriverWait(driver, 15).until(
                         EC.any_of(
                             EC.presence_of_element_located((By.CLASS_NAME, "_dealInfo_uw1k0_70")),
                             EC.presence_of_element_located((By.CLASS_NAME, "_listItem_1tanl_14")),
                             EC.presence_of_element_located((By.CLASS_NAME, "_records_1vyus_9")),
                         )
                     )
+
                     soup_data = BeautifulSoup(driver.page_source, 'lxml')
 
                     # Extract detailed vehicle information
@@ -241,111 +224,122 @@ class VehicleScraper:
                     if detailed_vehicle_data is None:
                         raise ValueError("Vehicle detailed data extraction returned None")
 
-                    # price
+                    # Extract vehicle price
                     price_section = soup_data.find("div", class_="_dealInfo_uw1k0_70")
                     price = None  # Default to None if price is not found
                     if price_section and price_section.find("h5", class_="WoAzt"):
-                        price = price_section.find("h5", class_="WoAzt").get_text(strip=True).replace("$", "").replace(",","")
+                        raw_price = price_section.find("h5", class_="WoAzt").get_text(strip=True)
+                        price = float(raw_price.replace("$", "").replace(",", "").strip())
 
-
-                    final_vehicle_data = Vehicle(
+                    # Build VehicleData object
+                    final_vehicle_data = VehicleData(
                         inventory_source_id=dealership.inventory_source_id,
                         listing_url=vehicle_url,
                         status="available",
-                        price=float(price) if price else None,  # Gracefully handle None price,
+                        price=price,
                         vehicle_data=detailed_vehicle_data if detailed_vehicle_data else None,
-                    ).__dict__
+                    ).model_dump(exclude_none=True)
 
-                    # print(json.dumps(final_vehicle_data, indent=1))
-                # success_message = (
-                #     f"Success✅: Extracted Vehicle Data "
-                #     f"VIN: {vin}, URL: {url}, DEALERSHIP: {dealership.dealership_name}, "
-                #     f"TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                # )
-                # self.slack_notifier.send_message(
-                #     message=success_message,
-                #     channel_id=settings.SLACK_CHANNEL
-                # )
-                # logging.info(success_message)
+                    # Successful extraction logging
+                    success_message = (
+                        f"✅ Successfully extracted vehicle data for: {dealership.dealership_name}\n"
+                        f"URL: {vehicle_url}\n"
+                    )
+                    logging.info(success_message)
+                    # if self.slack_notifier:
+                    #     self.slack_notifier.send_message(
+                    #         message=success_message,
+                    #         channel_id=settings.SLACK_CHANNEL
+                    #     )
 
-                return final_vehicle_data
+                    return final_vehicle_data
 
-            except Exception as e:
-                error_message = (
-                    f"Error❌: Extracting Vehicle Data, URL: {vehicle_url}, DEALERSHIP: {dealership.dealership_name}, "
-                    f"TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, ERROR: {str(e)}"
-                )
-                self.slack_notifier.send_message(
-                    message=error_message,
-                    channel_id=settings.SLACK_CHANNEL
-                )
-                logging.error(error_message)
-                return None
+                except Exception as exc:
+                    error_message = (
+                        f"❌ Error extracting vehicle data for dealership '{dealership.dealership_name}'\n"
+                        f"URL: {vehicle_url}\n"
+                        f"Error: {str(exc)}"
+                    )
+                    logging.error(error_message)
+                    if self.slack_notifier:
+                        self.slack_notifier.send_message(
+                            message=error_message,
+                            channel_id=settings.SLACK_CHANNEL
+                        )
+                    return None
 
-            finally:
-                success_message = (
-                    f"Success✅: Extracted Vehicle Data Driver Closed "
-                    f"VIN: {vehicle_url}, URL: {vehicle_url}, DEALERSHIP: {dealership.dealership_name}, "
-                    f"TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-                self.slack_notifier.send_message(
-                    message=success_message,
-                    channel_id=settings.SLACK_CHANNEL
-                )
-                logging.info(success_message)
-                driver.quit()
 
-    def is_duplicate_vehicle_data(self, existing_records, new_entry):
-        try:
-            for record in existing_records:
-                if record.get("listing_url") == new_entry.get("listing_url"):
-                    raise ValueError(
-                        f"Duplicate found:  URL: {new_entry.get('listing_url')}")
-            return False
+    def is_duplicate_vehicle_data(self, existing_list: List[VehicleData], new_entry: VehicleData) -> bool:
+        duplicate = any(
+            record['listing_url'] == new_entry['listing_url']
+            for record in existing_list
+        )
+        if duplicate:
+            logging.warning(f"⚠️ Duplicate found and skipped: {new_entry['listing_url']}")
+        return duplicate
 
-        except ValueError as ve:
-            print(f"Error duplicate data: {ve}")
-            error_message = (
-                f"Error❌: Duplicate vehicle data, "
-                f"URL: {new_entry.get('listing_url')},"
-                f"TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, "
-                f"ERROR: {str(ve)}"
-            )
-            self.slack_notifier.send_message(
-                message=error_message,
-                channel_id=settings.SLACK_CHANNEL
-            )
-            logging.error(error_message)
-            return True
 
-    def process_and_send_batches(self,vehicle_existing_data, vehicle_output_data, slack_obj):
-        non_duplicates = [
-            item for item in vehicle_output_data
-            if not self.is_duplicate_vehicle_data(vehicle_existing_data, item)
+    def process_and_send_batches(self,existing_list: List[VehicleData], new_data_list: List[dict]) -> None:
+        # Remove duplicates
+        filtered_records = [
+            data
+            for data in new_data_list
+            if not self.is_duplicate_vehicle_data(existing_list, data)
         ]
-        # print(f"Filtered {len(vehicle_output_data) - len(non_duplicates)} duplicate records.")
 
-        logging.info(f"Filtered {len(vehicle_output_data) - len(non_duplicates)} duplicate records.")
-        total_records = len(non_duplicates)
-        total_batches = ceil(total_records / settings.SEND_BATCH_SIZE or None)
+        # if api is blank
+        # filtered_records = new_data_list
+
+        total_records = len(filtered_records)
+        chunk_size = settings.SEND_BATCH_SIZE
+        total_batches = ceil(total_records / chunk_size)
+
+        logging.info(
+            f"🚀 Total records after filtering: {total_records}, Batch size: {chunk_size}, Total batches: {total_batches}"
+        )
 
         for batch_number in range(total_batches):
-            start_idx = batch_number * settings.SEND_BATCH_SIZE
-            end_idx = min(start_idx + settings.SEND_BATCH_SIZE, total_records)
-            batch_data = [data for data in non_duplicates[start_idx:end_idx]]
-            print(batch_data)
-            logging.info(f"Sending Batch {batch_number + 1}/{total_batches} (Records {start_idx + 1}-{end_idx})")
+            start_idx = batch_number * chunk_size
+            end_idx = start_idx + chunk_size
+            current_batch = filtered_records[start_idx:end_idx]
 
-            for data in batch_data:
-                attempt = 0
+            logging.info(
+                f"📦 Starting batch {batch_number + 1}/{total_batches}, "
+                f"records {start_idx + 1}-{min(end_idx, total_records)}"
+            )
+
+            for vehicle_data in current_batch:
+                attempts = 0
                 success = False
-                while attempt < settings.MAX_RETRY_ATTEMPTS and not success:
-                    success = VehicleData.post_vehicle_data(self.slack_notifier, data)
-                    attempt += 1
-                    if not success:
-                        logging.warning(f"Retrying... Attempt {attempt}/{settings.MAX_RETRY_ATTEMPTS}")
-                        time.sleep(2)
+                while attempts < settings.MAX_RETRY_ATTEMPTS and not success:
+                    success = VehicleDataAPI.post_vehicle(self.slack_notifier, vehicle_data)
+                    attempts += 1
+
+                    if success:
+                        logging.info(
+                            f"✅ Successfully sent data for URL: {vehicle_data['listing_url']} (Attempt {attempts})"
+                        )
+                    else:
+                        logging.warning(
+                            f"⚠️ Retry {attempts}/{settings.MAX_RETRY_ATTEMPTS} failed for URL: {vehicle_data['listing_url']}"
+                        )
+                        if attempts < settings.MAX_RETRY_ATTEMPTS:
+                            time.sleep(2)  # Delay before retrying
 
                 if not success:
-                    logging.error(f"Failed to send batch starting at record {start_idx + 1}")
+                    error_message = (
+                        f"❌ Failed to send data after {attempts} attempts. URL: {vehicle_data['listing_url']}"
+                    )
+                    logging.error(error_message)
+                    if self.slack_notifier:
+                        self.slack_notifier.send_message(
+                            message=error_message,
+                            channel_id=settings.SLACK_CHANNEL,
+                        )
+
+            logging.info(f"📤 Completed batch {batch_number + 1}/{total_batches}")
+
+        logging.info("🏅 All batches processed successfully.")
+
+
 

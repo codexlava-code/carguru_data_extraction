@@ -1,53 +1,80 @@
+from typing import List
+
 import requests, logging, json, os
 from datetime import datetime
 from app.config.config import settings
+from app.models.schemas import VehicleData
 
-class VehicleData:
-    def __init__(self):
-        """Initialize Slack client with bot token and signing secret."""
 
+class VehicleDataAPI:
     @staticmethod
-    def post_vehicle(slack_obj=None, data_batch=None):
-        headers = {"Content-Type": "application/json"}
+    def post_vehicle(slack_obj, data_batch: dict) -> bool:
+        url = settings.VEHICLE_API_URL
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        print(data_batch)
+        # payload = [vehicle for vehicle in data_batch]
+        # print(payload)
         try:
             response = requests.post(
-                settings.VEHICLE_API_URL,
-                data=json.dumps(data_batch),
+                url,
+                json=data_batch,
                 headers=headers)
             response.raise_for_status()
-            logging.info(f"Posted: {len(data_batch)} vehicles")
+
+            success_message = (
+                f"✅ Successfully posted {len(data_batch)} vehicles at "
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            logging.info(success_message)
             return True
+
         except requests.RequestException as errr:
-            err_message = (
-                f"Error❌ Error Post vehicle data"
-                f"TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, "
-                f"ERROR: {str(errr)}"
+            error_message = (
+                f"❌ Error posting vehicle data at "
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Error details: {str(errr)}\n"
+                f"Payload: {json.dumps(data_batch, indent=2)}"
             )
-            slack_obj.send_message(
-                message=err_message,
-                channel_id=settings.SLACK_CHANNEL
-            )
-            logging.error(err_message)
+            logging.error(error_message)
+
+            if slack_obj:
+                slack_obj.send_message(
+                    message=error_message,
+                    channel_id=settings.SLACK_CHANNEL
+                )
             return False
 
 
     @staticmethod
-    def get_vehicle(slack_obj=None):
-        headers = {"accept": "application/json"}
+    def get_vehicle(slack_obj) -> List[VehicleData]:
+        url = settings.VEHICLE_API_URL
+        headers = {"Accept": "application/json"}
         try:
-            response = requests.get(settings.VEHICLE_API_URL, headers=headers)
+            response = requests.get(url, headers=headers)
             response.raise_for_status()
-            return response.json()
+            vehicle_data = response.json()
+
+            # vehicle_models = [VehicleData(**dealer) for dealer in vehicle_data]
+            logging.info(
+                f"✅ Successfully retrieved {len(vehicle_data)} vehicles at "
+            )
+            return vehicle_data
+
         except requests.RequestException as errr:
-            err_message = (
-                f"Error❌ Error get vehicle data"
-                f"TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                f"ERROR: {str(errr)}"
-            )
-            slack_obj.send_message(
-                message=err_message,
-                channel_id=settings.SLACK_CHANNEL
-            )
-            logging.error(err_message)
-            return []
+                err_message = (
+                    f"Error❌ Error get vehicle data"
+                    f"TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    f"ERROR: {str(errr)}"
+                )
+                logging.error(err_message)
+
+                if slack_obj:
+                    slack_obj.send_message(
+                        message=err_message,
+                        channel_id=settings.SLACK_CHANNEL
+                    )
+                return []
 

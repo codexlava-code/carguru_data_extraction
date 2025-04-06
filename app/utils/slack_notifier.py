@@ -2,17 +2,18 @@ import time, os, hashlib, hmac
 from dotenv import load_dotenv
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from app.config.config import settings
 
 class SlackClient:
     def __init__(self):
         """Initialize Slack client with bot token and signing secret."""
-        # Load environment variables from .env.example file
-        load_dotenv()
-        self.token = os.environ.get("SLACK_BOT_TOKEN")
+        # # Load environment variables from .env.example file
+        # load_dotenv()
+        self.token = settings.SLACK_BOT_TOKEN
         if not self.token:
             raise ValueError("SLACK_BOT_TOKEN not found in environment variables")
         self.client = WebClient(token=self.token)
-        self.signing_secret = os.environ.get("SLACK_SIGNING_SECRET")
+        self.signing_secret = settings.SLACK_SIGNING_SECRET
 
     def send_message(self, message: str, channel_id: str) -> bool:
         """

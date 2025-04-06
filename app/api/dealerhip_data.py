@@ -1,93 +1,77 @@
+from typing import List
+
 import requests, logging, json, os
 from datetime import datetime
 from app.config.config import settings
+from app.models.schemas import Dealership
 
-class DealershipData:
+
+class DealershipDataAPI:
     def __init__(self):
         """Initialize Slack client with bot token and signing secret."""
 
     @staticmethod
-    def post_dealership(slack_obj=None, data_batch=None):
-        headers = {"Content-Type": "application/json"}
+    def post_dealership(slack_obj, data_batch: List[Dealership]) -> bool:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        api_url = settings.DEALERSHIP_API_URL
+
         try:
-            response = requests.post(
-                settings.DEALERSHIP_API_URL,
-                data=json.dumps(data_batch),
-                headers=headers)
+            # Properly serialize pydantic models (correct way)
+            serialized_data = json.loads(data_batch[0].model_dump_json())
+            print(serialized_data)
+            response = requests.post(api_url, json=serialized_data, headers=headers)
             response.raise_for_status()
-            logging.info(f"Posted: {len(data_batch)} vehicles")
+
+            success_message = (
+                f"✅ Successfully posted {len(data_batch)} dealerships at "
+            )
+            logging.info(success_message)
             return True
+
         except requests.RequestException as errr:
-            err_message = (
-                f"Error❌ Error Post vehicle data"
-                f"TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, "
-                f"ERROR: {str(errr)}"
+            error_message = (
+                f"❌ Error posting dealership data at "
+                f"Error details: {str(errr)}\n"
+                f"Payload: {json.dumps(data_batch, indent=1)}"
             )
-            slack_obj.send_message(
-                message=err_message,
-                channel_id=settings.SLACK_CHANNEL
-            )
-            logging.error(err_message)
+            logging.error(error_message)
+            if slack_obj:
+                slack_obj.send_message(
+                    message=error_message,
+                    channel_id=settings.SLACK_CHANNEL
+                )
             return False
 
     @staticmethod
-    def get_dealership(slack_obj=None):
-        headers = {"accept": "application/json"}
+    def get_dealership(slack_obj) -> List[Dealership]:
+        api_url = settings.DEALERSHIP_API_URL
+        headers = {"Accept": "application/json"}
+
         try:
-            # response = requests.get(settings.DEALERSHIP_API_URL, headers=headers)
-            # response.raise_for_status()
-            # return response.json()
-            dealerships_api_url = [
-                # {
-                #   "id": "123e4567-e89b-12d3-a456-426614174000",
-                #   "address_id": "223e4567-e89b-12d3-a456-426614174001",
-                #   "inventory_source_id": "323e4567-e89b-12d3-a456-426614174002",
-                #   "name": "Best Dealership",
-                #   "phone_number": "555-123-4567",
-                #   "email": "contact@bestdealership.com",
-                #   "general_manager": "John Doe",
-                #   "website": "http://www.bestdealership.com",
-                #   "created_at": "2021-01-01T12:00:00Z",
-                #   "updated_at": "2021-01-02T12:00:00Z",
-                #   "inventory_source": {
-                #     "id": "323e4567-e89b-12d3-a456-426614174002",
-                #     "url": "https://www.cargurus.com/Cars/m-Twins-Auto-Sales--Taylor-sp457133",
-                #     "category": "car_gurus",
-                #     "created_at": "2021-01-01T12:00:00Z",
-                #     "updated_at": "2021-01-02T12:00:00Z"
-                #   }
-                # },
-                {
-                    "id": "423e4567-e89b-12d3-a456-426614174003",
-                    "address_id": "523e4567-e89b-12d3-a456-426614174004",
-                    "inventory_source_id": "623e4567-e89b-12d3-a456-426614174005",
-                    "name": "Quality Cars",
-                    "phone_number": "555-987-6543",
-                    "email": "info@qualitycars.com",
-                    "general_manager": "Jane Smith",
-                    "website": "http://www.qualitycars.com",
-                    "created_at": "2021-02-01T12:00:00Z",
-                    "updated_at": "2021-02-02T12:00:00Z",
-                    "inventory_source": {
-                        "id": "623e4567-e89b-12d3-a456-426614174005",
-                        "url": "https://www.cargurus.com/Cars/m-Rogers-Auto-Sales-Inc-sp340683",
-                        # https://www.cargurus.com/Cars/m-Carrio-MotorCars-sp385771
-                        "category": "car_gurus",
-                        "created_at": "2021-02-01T12:00:00Z",
-                        "updated_at": "2021-02-02T12:00:00Z"
-                    }
-                }
-            ]
-            return dealerships_api_url
-        except requests.RequestException as errr:
-            err_message = (
-                f"Error❌ Error get dealership data"
-                f"TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                f"ERROR: {str(errr)}"
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()
+            dealerships = response.json()
+
+            dealership_models = [Dealership(**dealer) for dealer in dealerships]
+            logging.info(
+                f"✅ Successfully retrieved {len(dealership_models)} dealerships at "
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             )
-            slack_obj.send_message(
-                message=err_message,
-                channel_id=settings.SLACK_CHANNEL
+            return dealership_models
+
+        except requests.RequestException as error:
+            error_message = (
+                f"❌ Error retrieving dealership data at "
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Error details: {str(error)}"
             )
-            logging.error(err_message)
+            logging.error(error_message)
+            if slack_obj:
+                slack_obj.send_message(
+                    message=error_message,
+                    channel_id=settings.SLACK_CHANNEL
+                )
             return []

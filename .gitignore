@@ -180,3 +180,7 @@ Pipfile.lock
 # avoid log files
 app/logs/app.log
 
+# avoid jetbrains file
+.idea
+*.idea
+

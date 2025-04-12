@@ -1,0 +1,13 @@
+requests~=2.32.3
+python-dotenv~=1.1.0
+beautifulsoup4~=4.13.3
+selenium~=4.31.0
+webdriver-manager~=4.0.2
+pandas~=2.2.3
+slack_sdk~=3.35.0
+lxml~=5.3.1
+schedule~=1.2.2
+pydantic~=2.11.1
+pydantic-settings~=2.8.1
+redis~=5.2.1
+memoization~=0.4.0

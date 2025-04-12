@@ -1,7 +1,9 @@
-from typing import List
+import requests, logging, json
 
-import requests, logging, json, os
+from typing import List
 from datetime import datetime
+from memoization import cached,CachingAlgorithmFlag
+
 from app.config.config import settings
 from app.models.schemas import VehicleData
 
@@ -14,9 +16,7 @@ class VehicleDataAPI:
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
-        print(data_batch)
-        # payload = [vehicle for vehicle in data_batch]
-        # print(payload)
+
         try:
             response = requests.post(
                 url,
@@ -49,6 +49,7 @@ class VehicleDataAPI:
 
 
     @staticmethod
+    @cached(ttl=300, max_size=200, algorithm=CachingAlgorithmFlag.LRU, thread_safe=True)
     def get_vehicle(slack_obj) -> List[VehicleData]:
         url = settings.VEHICLE_API_URL
         headers = {"Accept": "application/json"}

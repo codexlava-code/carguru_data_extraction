@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     SLACK_CHANNEL: str = Field(default="C08FQ51LEAF", description="Slack Channel ID from environment.")
 
     # Application behavior with defaults
-    MAX_THREAD: int = Field(default=23, description="Maximum number of processing threads.")
+    MAX_THREAD: int = Field(default=10, description="Maximum number of processing threads.")
     SEND_BATCH_SIZE: int = Field(default=1, description="Batch size of data sent at a time.")
     MAX_RETRY_ATTEMPTS: int = Field(default=2, description="Maximum retry attempts for sending requests.")
 
@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     HEADLESS_MODE: bool = Field(default=True, description="Run Selenium in headless mode")
     PAGE_LOAD_TIMEOUT: int = Field(default=600, description="Timeout for Selenium page loading")
     IMPLICITLY_TIMEOUT: int = Field(default=30, description="Timeout for Selenium Implicitly wait")
+
+    # resources file link
+    RESOURCES_DEALERSHIP: str = Field(default="app/resources/cargurus_dealership_data.csv", description="resources path to save carguru_dealership data")
+    RESOURCES_VEHICLE: str = Field(default="app/resources/cargurus_vehicle_data.csv", description="resources path to save carguru_vehicle data")
+    DEALERSHIP_FILE_PATH: str = Field(default="app/resources/dealership_data.json", description="Dealership post json file path")
 
     model_config = SettingsConfigDict(env_file=".env.local", env_file_encoding="utf-8")
 

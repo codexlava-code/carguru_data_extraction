@@ -1,5 +1,24 @@
 [
   {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "address_id": "223e4567-e89b-12d3-a456-426614174001",
+    "inventory_source_id": "323e4567-e89b-12d3-a456-426614174002",
+    "name": "Best Dealership",
+    "phone_number": "555-123-4567",
+    "email": "contact@bestdealership.com",
+    "general_manager": "John Doe",
+    "website": "http://www.bestdealership.com",
+    "created_at": "2021-01-01T12:00:00Z",
+    "updated_at": "2021-01-02T12:00:00Z",
+    "inventory_source": {
+      "id": "323e4567-e89b-12d3-a456-426614174002",
+      "url": "https://www.cargurus.com/Cars/m-Twins-Auto-Sales--Taylor-sp457133",
+      "category": "car_gurus",
+      "created_at": "2021-01-01T12:00:00Z",
+      "updated_at": "2021-01-02T12:00:00Z"
+    }
+  },
+  {
     "id": "423e4567-e89b-12d3-a456-426614174009",
     "address_id": "523e4567-e89b-12d3-a456-426614174004",
     "inventory_source_id": "623e4567-e89b-12d3-a456-426614174005",
@@ -19,23 +38,3 @@
     }
   }
 ]
-
-//  {
-//    "id": "123e4567-e89b-12d3-a456-426614174000",
-//    "address_id": "223e4567-e89b-12d3-a456-426614174001",
-//    "inventory_source_id": "323e4567-e89b-12d3-a456-426614174002",
-//    "name": "Best Dealership",
-//    "phone_number": "555-123-4567",
-//    "email": "contact@bestdealership.com",
-//    "general_manager": "John Doe",
-//    "website": "http://www.bestdealership.com",
-//    "created_at": "2021-01-01T12:00:00Z",
-//    "updated_at": "2021-01-02T12:00:00Z",
-//    "inventory_source": {
-//      "id": "323e4567-e89b-12d3-a456-426614174002",
-//      "url": "https://www.cargurus.com/Cars/m-Twins-Auto-Sales--Taylor-sp457133",
-//      "category": "car_gurus",
-//      "created_at": "2021-01-01T12:00:00Z",
-//      "updated_at": "2021-01-02T12:00:00Z"
-//    }
-//  },

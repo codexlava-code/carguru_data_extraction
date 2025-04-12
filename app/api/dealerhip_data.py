@@ -2,16 +2,18 @@ from typing import List
 
 import requests, logging, json, os
 from datetime import datetime
+from memoization import cached,CachingAlgorithmFlag
+
 from app.config.config import settings
 from app.models.schemas import Dealership
+from app.utils.slack_notifier import SlackClient
 
 
 class DealershipDataAPI:
-    def __init__(self):
-        """Initialize Slack client with bot token and signing secret."""
+    slack_client = SlackClient()
 
     @staticmethod
-    def post_dealership(slack_obj, data_batch: List[Dealership]) -> bool:
+    def post_dealership(slack_notifier: SlackClient, data_batch: List[Dealership]) -> bool:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
@@ -38,15 +40,16 @@ class DealershipDataAPI:
                 f"Payload: {json.dumps(data_batch, indent=1)}"
             )
             logging.error(error_message)
-            if slack_obj:
-                slack_obj.send_message(
+            if slack_notifier:
+                slack_notifier.send_message(
                     message=error_message,
                     channel_id=settings.SLACK_CHANNEL
                 )
             return False
 
     @staticmethod
-    def get_dealership(slack_obj) -> List[Dealership]:
+    @cached(ttl=300, max_size=200, algorithm=CachingAlgorithmFlag.LRU, thread_safe=True)
+    def get_dealership(slack_notifier: SlackClient) -> List[Dealership]:
         api_url = settings.DEALERSHIP_API_URL
         headers = {"Accept": "application/json"}
 
@@ -69,9 +72,10 @@ class DealershipDataAPI:
                 f"Error details: {str(error)}"
             )
             logging.error(error_message)
-            if slack_obj:
-                slack_obj.send_message(
+            if slack_notifier:
+                slack_notifier.send_message(
                     message=error_message,
                     channel_id=settings.SLACK_CHANNEL
                 )
             return []
+

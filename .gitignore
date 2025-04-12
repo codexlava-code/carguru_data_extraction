@@ -183,4 +183,10 @@ app/logs/app.log
 # avoid jetbrains file
 .idea
 *.idea
+.idea/vcs.xml
 
+#  avoid the file
+app/config/r_server.py
+
+# Notebook code avoid
+notebook

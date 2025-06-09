@@ -40,11 +40,11 @@ class DealershipDataAPI:
                 f"Payload: {json.dumps(data_batch, indent=1)}"
             )
             logging.error(error_message)
-            if slack_notifier:
-                slack_notifier.send_message(
-                    message=error_message,
-                    channel_id=settings.SLACK_CHANNEL
-                )
+            # if slack_notifier:
+            #     slack_notifier.send_message(
+            #         message=error_message,
+            #         channel_id=settings.SLACK_CHANNEL
+            #     )
             return False
 
     @staticmethod
@@ -72,10 +72,10 @@ class DealershipDataAPI:
                 f"Error details: {str(error)}"
             )
             logging.error(error_message)
-            if slack_notifier:
-                slack_notifier.send_message(
-                    message=error_message,
-                    channel_id=settings.SLACK_CHANNEL
-                )
+            # if slack_notifier:
+            #     slack_notifier.send_message(
+            #         message=error_message,
+            #         channel_id=settings.SLACK_CHANNEL
+            #     )
             return []
 

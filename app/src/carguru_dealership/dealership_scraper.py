@@ -201,10 +201,10 @@ class DealershipScraper:
                 f"Error❌: Extracting Dealership Details {dealership_name}, URL: {url},ERROR: {str(e)}"
             )
             logging.error(error_message)
-            if self.slack_notifier:
-                self.slack_notifier.send_message(
-                    message=error_message,
-                    channel_id=settings.SLACK_CHANNEL
-                )
+            # if self.slack_notifier:
+            #     self.slack_notifier.send_message(
+            #         message=error_message,
+            #         channel_id=settings.SLACK_CHANNEL
+            #     )
             return None
 

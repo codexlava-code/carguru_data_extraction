@@ -1,5 +1,6 @@
 import logging, pandas as pd
 from typing import List
+from datetime import datetime
 
 from memoization import cached, CachingAlgorithmFlag
 
@@ -21,3 +22,9 @@ class Utils:
         df = pd.read_csv(file_path)
         logging.info(f"Successfully read data from {file_path}")
         return df.to_dict(orient="records")
+
+    @classmethod
+    def get_current_timestamp(cls):
+        """Returns current timestamp in ISO 8601 format."""
+        return datetime.now().isoformat()
+

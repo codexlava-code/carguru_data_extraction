@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     RESOURCES_VEHICLE: str = Field(default="app/resources/cargurus_vehicle_data.csv", description="resources path to save carguru_vehicle data")
     DEALERSHIP_FILE_PATH: str = Field(default="app/resources/dealership_data.json", description="Dealership post json file path")
 
+    # host version
+    HOST_ENV: str = Field(default="development", description="Host environment setup")
+
     model_config = SettingsConfigDict(env_file=".env.local", env_file_encoding="utf-8")
 
 settings = Settings()

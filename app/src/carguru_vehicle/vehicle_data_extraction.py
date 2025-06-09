@@ -83,11 +83,11 @@ class VehicleDataExtraction:
                     f"URL: {page_url}, Error: {str(exc)}"
                 )
                 logging.error(error_message)
-                if self.slack_notifier:
-                    self.slack_notifier.send_message(
-                        message=error_message,
-                        channel_id=settings.SLACK_CHANNEL
-                    )
+                # if self.slack_notifier:
+                #     self.slack_notifier.send_message(
+                #         message=error_message,
+                #         channel_id=settings.SLACK_CHANNEL
+                #     )
 
         return all_vehicle_links
 
@@ -158,11 +158,11 @@ class VehicleDataExtraction:
         except Exception as e:
             error_message = f"Vehicle Data construction error 💥 URL: {vehicle_url}, ERROR: {str(e)}"
             logging.error(error_message)
-            if self.slack_notifier:
-                self.slack_notifier.send_message(
-                    message=error_message,
-                    channel_id=settings.SLACK_CHANNEL
-                )
+            # if self.slack_notifier:
+            #     self.slack_notifier.send_message(
+            #         message=error_message,
+            #         channel_id=settings.SLACK_CHANNEL
+            #     )
             return None
 
     def process_vehicle_data(self, vehicle_url: str, dealership: DealershipData) -> Optional[VehicleData]:
@@ -230,9 +230,9 @@ class VehicleDataExtraction:
                     f"Error: {str(exc)}"
                 )
                 logging.error(error_message)
-                if self.slack_notifier:
-                    self.slack_notifier.send_message(
-                        message=error_message,
-                        channel_id=settings.SLACK_CHANNEL
-                    )
+                # if self.slack_notifier:
+                #     self.slack_notifier.send_message(
+                #         message=error_message,
+                #         channel_id=settings.SLACK_CHANNEL
+                #     )
                 return None

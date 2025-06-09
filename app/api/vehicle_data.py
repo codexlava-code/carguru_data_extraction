@@ -39,12 +39,12 @@ class VehicleDataAPI:
                 f"Payload: {json.dumps(data_batch, indent=2)}"
             )
             logging.error(error_message)
-
-            if slack_obj:
-                slack_obj.send_message(
-                    message=error_message,
-                    channel_id=settings.SLACK_CHANNEL
-                )
+            #
+            # if slack_obj:
+            #     slack_obj.send_message(
+            #         message=error_message,
+            #         channel_id=settings.SLACK_CHANNEL
+            #     )
             return False
 
 
@@ -72,10 +72,10 @@ class VehicleDataAPI:
                 )
                 logging.error(err_message)
 
-                if slack_obj:
-                    slack_obj.send_message(
-                        message=err_message,
-                        channel_id=settings.SLACK_CHANNEL
-                    )
+                # if slack_obj:
+                #     slack_obj.send_message(
+                #         message=err_message,
+                #         channel_id=settings.SLACK_CHANNEL
+                #     )
                 return []
 

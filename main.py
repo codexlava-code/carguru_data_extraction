@@ -1,5 +1,8 @@
+import json
 import logging
 from dotenv import load_dotenv
+
+from wsgiref.simple_server import make_server
 
 from app.config.config import settings
 from app.src.carguru_dealership.dealership_scraper import DealershipScraper
@@ -17,37 +20,114 @@ def setup_logging():
         format="%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
+setup_logging()
 
 
-def main():
-    """Main entry point of the scraper module."""
-    setup_logging()
-    logging.info("Scraper job started.")
-
-    # Get Dealership Data
-    dealership_obj = DealershipScraper()
-    dealerships_list = dealership_obj.fetch_dealership_data()
-
-    # Get Vehicle Data
-    vehicle_obj = VehicleScraper()
-    dealerships_data, vehicle_data = vehicle_obj.handle_scraping(dealerships_list, dealership_obj)
+import json
+import re
 
 
-    # save dealership data
-    # Utils.save_to_csv(dealerships_data, settings.RESOURCES_DEALERSHIP)
+class MyFramework:
+    def __init__(self):
+        self.routes = []
+        self.middlewares = []
 
-    # Save vehicle data
-    Utils.save_to_csv(vehicle_data, settings.RESOURCES_VEHICLE)
+    def route(self, path, methods=['GET']):
+        # Path can have parameters e.g. /scrape/<task>
+        def decorator(func):
+            pattern = re.compile('^' + re.sub(r'<(\w+)>', r'(?P<\1>[^/]+)', path) + '$')
+            self.routes.append({'pattern': pattern, 'methods': methods, 'func': func, 'path': path})
+            return func
 
-    # Read vehicle data
-    # vehicle_output_data_csv = Utils.read_from_csv(settings.RESOURCES_VEHICLE)
-    #
-    # # Process the vehicle data to send API
-    # vehicle_obj.process_vehicle_data_post(vehicle_output_data_csv)
+        return decorator
 
-    logging.info("✅ Scraper job finished successfully.\n\n")
+    def add_middleware(self, middleware_func):
+        self.middlewares.append(middleware_func)
+
+    def __call__(self, environ, start_response):
+        path = environ.get('PATH_INFO', '/')
+        method = environ.get('REQUEST_METHOD', 'GET')
+        body = b''
+        if method == 'POST':
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            if content_length > 0:
+                body = environ['wsgi.input'].read(content_length)
+        try:
+            request_data = json.loads(body.decode()) if body else {}
+        except Exception:
+            request_data = {}
+
+        # Middleware before request
+        for mw in self.middlewares:
+            mw(path, method, request_data)
+
+        for route in self.routes:
+            match = route['pattern'].match(path)
+            if match and method in route['methods']:
+                try:
+                    kwargs = match.groupdict()
+                    result = route['func'](request_data, **kwargs)
+                    response = json.dumps(result).encode()
+                    start_response('200 OK', [('Content-Type', 'application/json')])
+                except Exception as e:
+                    response = json.dumps({"error": str(e)}).encode()
+                    start_response('500 Internal Server Error', [('Content-Type', 'application/json')])
+                return [response]
+
+        if path == '/docs':
+            return [self._auto_docs(start_response)]
+
+        start_response('404 Not Found', [('Content-Type', 'application/json')])
+        return [b'{"error":"not found"}']
+
+    def _auto_docs(self, start_response):
+        routes = [
+            {
+                "path": r['path'],
+                "methods": r['methods'],
+                "function": r['func'].__name__,
+                "doc": r['func'].__doc__
+            }
+            for r in self.routes
+        ]
+        start_response('200 OK', [('Content-Type', 'application/json')])
+        return json.dumps({"routes": routes}, indent=2).encode()
 
 
-if __name__ == '__main__':
-    main()
+
+
+
+# class MyFramework:
+#     def __init__(self):
+#         self.routes = {}
+#         self.middlewares = []
+#
+#     def route(self, path, methods=['GET']):
+#         def decorator(func):
+#             self.routes[(path, tuple(methods))] = func
+#             return func
+#
+#         return decorator
+#
+#     def __call__(self, environ, start_response):
+#         path = environ.get('PATH_INFO', '/')
+#         method = environ.get('REQUEST_METHOD', 'GET')
+#         for (route_path, route_methods), func in self.routes.items():
+#             if route_path == path and method in route_methods:
+#                 # Parse request body if POST
+#                 content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+#                 body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+#                 try:
+#                     request_data = json.loads(body.decode()) if body else {}
+#                 except Exception:
+#                     request_data = {}
+#                 result = func(request_data)
+#                 response = json.dumps(result).encode()
+#                 start_response('200 OK', [('Content-Type', 'application/json')])
+#                 return [response]
+#         start_response('404 Not Found', [('Content-Type', 'application/json')])
+#         return [b'{"error":"not found"}']
+
+
+
 

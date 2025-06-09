@@ -87,3 +87,24 @@ driver.quit()  # Don't forget to quit the driver when done
 - Keep your dependencies up to date for security and stability
 - The signing secret is used to verify incoming requests from Slack
 - The bot token is still required for sending messages to Slack
+# MyFramework
+
+## Overview
+A lightweight, customizable web micro-framework for running Python scraping jobs over HTTP.
+
+### Features
+- WSGI base (works with Gunicorn)
+- Route registration via decorator
+- Support for URL path parameters
+- Middleware (for pre-processing/logging)
+- Automatic docs at `/docs`
+- Simple error handling
+
+### Example Usage
+
+Add a route:
+```python
+@app.route('/run', methods=['POST'])
+def run(data):
+    return {"ok": True}
+```

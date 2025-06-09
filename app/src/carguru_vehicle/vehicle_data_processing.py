@@ -48,8 +48,8 @@ class VehicleDataProcessing:
         if not success:
             error_message = f"❌ Failed to send data after {attempts} attempts. URL: {vehicle_data['listing_url']}"
             logging.error(error_message)
-            if slack_notifier:
-                slack_notifier.send_message(message=error_message, channel_id=settings.SLACK_CHANNEL)
+            # if slack_notifier:
+            #     slack_notifier.send_message(message=error_message, channel_id=settings.SLACK_CHANNEL)
 
 
     @staticmethod
@@ -69,7 +69,7 @@ class VehicleDataProcessing:
                     future.result()  # Raises exception if the call failed
                 except Exception as e:
                     logging.error(f"Error while processing vehicle data: {str(e)}")
-                    # Handle the exception, e.g., retry or log to slack
-                    if slack_notifier:
-                        slack_notifier.send_message(message=f"Error occurred: {str(e)}",
-                                                    channel_id=settings.SLACK_CHANNEL)
+                    # # Handle the exception, e.g., retry or log to slack
+                    # if slack_notifier:
+                    #     slack_notifier.send_message(message=f"Error occurred: {str(e)}",
+                    #                                 channel_id=settings.SLACK_CHANNEL)

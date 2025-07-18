@@ -1,0 +1,90 @@
+trigger:
+  branches:
+    exclude:
+      - '*'
+    include:
+      - dev
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+- job: PipenvInstall
+  steps:
+  - script: |
+      python -m venv venv
+      source venv/bin/activate
+      pip install pipenv
+      pipenv install --deploy --ignore-pipfile
+    displayName: 'Install Pipenv'
+
+- job: RunTests
+  dependsOn:
+    - PipenvInstall
+  steps:
+  - script: |
+      # Start PostgreSQL Docker container with credentials
+      docker run -d --name postgres-container \
+        -e POSTGRES_USER=bobst \
+        -e POSTGRES_PASSWORD=bobst123 \
+        -e POSTGRES_DB=bobst_db \
+        -p 5432:5432 \
+        postgres:latest
+      # Wait for PostgreSQL to be ready
+      sleep 10s
+    displayName: 'Start PostgreSQL Docker Container'
+
+  - script: |
+      python -m venv venv
+      source venv/bin/activate
+      pip install pipenv
+      pipenv install --deploy --ignore-pipfile
+      pipenv run python -m unittest discover -s . -p '*_test.py'
+    displayName: 'Run Unit Tests'
+
+  - script: |
+      # Stop and remove the PostgreSQL container
+      docker stop postgres-container
+      docker rm postgres-container
+    displayName: 'Stop and Remove PostgreSQL Container'
+
+- job: CodeQuality
+  dependsOn:
+    - PipenvInstall
+  steps:
+  - script: |
+      source venv/bin/activate
+      # Run mypy and store the exit code in a variable
+      exit_code_mypy=$(pipenv run mypy .)
+      if [ $exit_code_mypy -ne 0 ]; then
+          echo "mypy found type errors. Exiting with code $exit_code_mypy."
+          exit $exit_code_mypy
+      fi
+    displayName: 'Run mypy Type Checking'
+
+  - script: |
+      source venv/bin/activate
+      # Run ruff check to show source of issues
+      pipenv run ruff check --show-source .
+
+      # Run ruff format with --check and --diff options to identify formatting issues without modifying files
+      exit_code_ruff_format=$(pipenv run ruff format --check --diff .)
+      if [ $exit_code_ruff_format -ne 0 ]; then
+          echo "ruff found formatting issues. Exiting with code $exit_code_ruff_format."
+          exit $exit_code_ruff_format
+      fi
+    displayName: 'Run ruff Code Quality Checks'
+
+- job: Finalize
+  dependsOn:
+    - RunTests
+    - CodeQuality
+  condition: |
+    and(
+      succeeded('RunTests'),
+      succeeded('CodeQuality')
+    )
+  steps:
+  - script: |
+      echo "Both mypy and ruff checks passed. Pipeline succeeded."
+    displayName: 'Finalize'

@@ -1,0 +1,95 @@
+version: '3'
+
+services:
+  cockpit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5521:5521"
+    networks:
+      - webnet
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./devops/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - cockpit
+    networks:
+      - webnet
+
+
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./influxdb-data:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=bobst_db
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=admin
+      - INFLUXDB_USER=bobst
+      - INFLUXDB_USER_PASSWORD=bobst123
+    networks:
+      - webnet
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    depends_on:
+      - influxdb
+    networks:
+      - webnet
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - grafana_config:/etc/grafana
+
+  mysql:
+    image: mysql:latest
+    container_name: mysql
+    environment:
+      MYSQL_DATABASE: bobst_db
+      MYSQL_USER: bobst
+      MYSQL_PASSWORD: bobst123
+      MYSQL_ROOT_PASSWORD: bobst123
+    restart: always
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - webnet
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: pma
+    depends_on: 
+    - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_ARBITARY: 1
+      MYSQL_ROOT_PASSWORD: bobst123
+    restart: always
+    ports:
+      - 8081:80
+    networks:
+      - webnet
+
+networks:
+  webnet:
+
+volumes:
+  influxdb-data:
+  grafana_data:
+  grafana_config:
+  mysql_data:
